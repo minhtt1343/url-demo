@@ -1,0 +1,10 @@
+{
+  "name": "url-shortener-demo",
+  "version": "1.0.0",
+  "main": "src/server.js",
+  "dependencies": {
+    "dotenv": "^18.0.10",
+    "express": "^5.3.0",
+    "pg": "^8.23.1"
+  }
+}

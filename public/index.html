@@ -1,0 +1,408 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TinyURL Production System | System Design Chapter 8</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+    <style>
+        :root {
+            --bg-main: #090d16;
+            --bg-card: #111827;
+            --bg-sub: #1e293b;
+            --text-main: #f8fafc;
+            --text-muted: #94a3b8;
+            --accent: #38bdf8;
+            --success: #10b981;
+            --warning: #f59e0b;
+            --danger: #ef4444;
+            --purple: #a855f7;
+            --border: #334155;
+        }
+        * { box-sizing: border-box; font-family: 'Segoe UI', system-ui, sans-serif; }
+        body { background-color: var(--bg-main); color: var(--text-main); margin: 0; padding: 20px; }
+        .container { max-width: 1320px; margin: 0 auto; }
+
+        header {
+            display: flex; justify-content: space-between; align-items: center;
+            border-bottom: 1px solid var(--border); padding-bottom: 16px; margin-bottom: 20px; flex-wrap: wrap; gap: 12px;
+        }
+        header h1 { margin: 0; font-size: 1.4rem; color: var(--accent); }
+        .kpi-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 20px; }
+        .kpi-card {
+            background: var(--bg-card); border: 1px solid var(--border); border-radius: 10px; padding: 16px;
+        }
+        .kpi-label { font-size: 0.8rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; }
+        .kpi-value { font-size: 1.6rem; font-weight: 700; color: var(--text-main); margin-top: 4px; }
+        .kpi-sub { font-size: 0.75rem; color: var(--success); margin-top: 4px; }
+
+        .card {
+            background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px;
+            padding: 20px; margin-bottom: 20px;
+        }
+        .card-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; flex-wrap: wrap; gap: 10px; }
+        .card-title { margin: 0; font-size: 1.05rem; font-weight: 600; }
+
+        .arch-diagram {
+            display: flex; justify-content: space-between; align-items: center;
+            background: var(--bg-main); border: 1px solid var(--border); border-radius: 10px; padding: 16px 20px; gap: 8px; overflow-x: auto;
+        }
+        .arch-node {
+            background: var(--bg-sub); border: 1px solid var(--border); border-radius: 8px;
+            padding: 10px 14px; text-align: center; min-width: 135px; transition: 0.3s;
+        }
+        .arch-node.active { border-color: var(--accent); box-shadow: 0 0 15px rgba(56, 189, 248, 0.4); }
+        .arch-node.active-danger { border-color: var(--danger); box-shadow: 0 0 15px rgba(239, 68, 68, 0.4); }
+        .arch-node .node-title { font-weight: 700; font-size: 0.85rem; }
+        .arch-node .node-desc { font-size: 0.72rem; color: var(--text-muted); }
+
+        .input-group { display: flex; gap: 10px; }
+        input[type="text"] {
+            flex: 1; padding: 12px 16px; border-radius: 8px; border: 1px solid var(--border);
+            background: var(--bg-main); color: var(--text-main); font-size: 0.95rem;
+        }
+        input[type="text"]:focus { outline: none; border-color: var(--accent); }
+        button {
+            padding: 11px 20px; border: none; border-radius: 8px; background: var(--accent);
+            color: #090d16; font-weight: 700; cursor: pointer; transition: 0.2s; white-space: nowrap;
+        }
+        button:hover { background: #0284c7; color: white; }
+        button.btn-sm { padding: 6px 12px; font-size: 0.8rem; border-radius: 6px; }
+        button.btn-secondary { background: var(--bg-sub); color: var(--text-main); border: 1px solid var(--border); }
+        button.btn-secondary:hover { border-color: var(--accent); }
+        button.btn-danger { background: rgba(239, 68, 68, 0.15); color: var(--danger); border: 1px solid rgba(239, 68, 68, 0.4); }
+        button.btn-danger:hover { background: var(--danger); color: white; }
+
+        .result-box {
+            margin-top: 16px; padding: 16px 20px; background: rgba(16, 185, 129, 0.08);
+            border: 1px solid rgba(16, 185, 129, 0.35); border-radius: 10px;
+            display: none; justify-content: space-between; align-items: center; gap: 20px; flex-wrap: wrap;
+        }
+        .qr-wrapper {
+            display: flex; flex-direction: column; align-items: center; gap: 6px;
+        }
+        .qr-box {
+            background: #ffffff; padding: 10px; border-radius: 8px; display: flex; align-items: center; justify-content: center;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.4); min-width: 135px; min-height: 135px;
+        }
+
+        .grid-main { display: grid; grid-template-columns: 1.45fr 1fr; gap: 20px; }
+        .table-wrap { overflow-x: auto; max-height: 350px; overflow-y: auto; }
+        table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+        th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--border); }
+        th { color: var(--text-muted); position: sticky; top: 0; background: var(--bg-card); }
+        a { color: var(--accent); text-decoration: none; font-weight: 600; }
+        a:hover { text-decoration: underline; }
+
+        .pill { padding: 3px 8px; border-radius: 4px; font-size: 0.75rem; font-weight: 700; display: inline-block; cursor: pointer; }
+        .pill-302 { background: rgba(16, 185, 129, 0.15); color: var(--success); border: 1px solid rgba(16, 185, 129, 0.3); }
+        .pill-301 { background: rgba(168, 85, 247, 0.15); color: var(--purple); border: 1px solid rgba(168, 85, 247, 0.3); }
+        .pill-copy { background: rgba(56, 189, 248, 0.15); color: var(--accent); border: 1px solid rgba(56, 189, 248, 0.3); }
+        .pill-qr { background: rgba(245, 158, 11, 0.15); color: var(--warning); border: 1px solid rgba(245, 158, 11, 0.3); }
+
+        .log-console {
+            background: #05080f; border: 1px solid var(--border); border-radius: 8px;
+            padding: 12px; height: 220px; overflow-y: auto; font-family: 'Consolas', monospace; font-size: 0.8rem;
+        }
+        .log-item { padding: 4px 0; border-bottom: 1px dashed #1e293b; }
+        .log-INFO { color: #cbd5e1; }
+        .log-SUCCESS { color: var(--success); }
+        .log-WARNING { color: var(--warning); }
+        .log-ERROR { color: var(--danger); }
+
+        @media (max-width: 960px) { .kpi-grid { grid-template-columns: repeat(2, 1fr); } .grid-main { grid-template-columns: 1fr; } }
+    </style>
+</head>
+<body>
+<div class="container">
+    <header>
+        <div>
+            <h1>⚡ TinyURL Production System (Chapter 8)</h1>
+            <span style="color: var(--text-muted); font-size: 0.85rem;">Kiến trúc đầy đủ: Rate Limiter • Base 62 • RAM Cache • Relational DB • HTTP 301/302</span>
+        </div>
+        <div style="display: flex; gap: 8px;">
+            <button class="btn-sm btn-danger" onclick="simulateSpamAttack()">🛡️ Test Rate Limiter (Spam 6 lần)</button>
+        </div>
+    </header>
+
+    <div class="kpi-grid">
+        <div class="kpi-card">
+            <div class="kpi-label">Tổng URL đã lưu (DB)</div>
+            <div class="kpi-value" id="kpiUrls">0</div>
+            <div class="kpi-sub">Sức chứa: 3.5 nghìn tỷ (62⁷)</div>
+        </div>
+        <div class="kpi-card">
+            <div class="kpi-label">Tổng lượt điều hướng</div>
+            <div class="kpi-value" id="kpiClicks">0</div>
+            <div class="kpi-sub">Tỷ lệ thiết kế Đọc/Ghi: 10:1</div>
+        </div>
+        <div class="kpi-card">
+            <div class="kpi-label">Bản ghi trên RAM Cache</div>
+            <div class="kpi-value" id="kpiCache">0</div>
+            <div class="kpi-sub">Tốc độ truy xuất &lt; 1ms</div>
+        </div>
+        <div class="kpi-card">
+            <div class="kpi-label">Bảo vệ Rate Limiter</div>
+            <div class="kpi-value" style="color: var(--success);">ACTIVE</div>
+            <div class="kpi-sub">Giới hạn: 5 requests / phút / IP</div>
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="card-header">
+            <h2 class="card-title">🏗️ Luồng xử lý kiến trúc thời gian thực (System Architecture)</h2>
+            <span id="pipelineStatus" style="font-size: 0.82rem; color: var(--accent);">Hệ thống đang hoạt động bình thường...</span>
+        </div>
+        <div class="arch-diagram">
+            <div class="arch-node" id="node-client"><div class="node-title">Client / Mobile</div><div class="node-desc">HTTP Request</div></div>
+            <div>➔</div>
+            <div class="arch-node" id="node-ratelimit"><div class="node-title">Rate Limiter</div><div class="node-desc">Chống Spam IP</div></div>
+            <div>➔</div>
+            <div class="arch-node" id="node-base62"><div class="node-title">ID Gen + Base 62</div><div class="node-desc">Mã hóa 7 ký tự</div></div>
+            <div>➔</div>
+            <div class="arch-node" id="node-cache"><div class="node-title">Memory Cache</div><div class="node-desc">Đọc siêu tốc</div></div>
+            <div>➔</div>
+            <div class="arch-node" id="node-db"><div class="node-title">Relational DB</div><div class="node-desc">Lưu trữ bền vững</div></div>
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="card-header">
+            <h2 class="card-title">🔗 Rút gọn bất kỳ đường dẫn thật nào (POST <code>/api/v1/data/shorten</code>)</h2>
+            <button class="btn-sm btn-secondary" onclick="fillSampleUrl()">Điền link mẫu</button>
+        </div>
+        <div class="input-group">
+            <input type="text" id="longUrlInput" placeholder="Dán bất kỳ link thật nào vào đây (VD: youtube.com, vnexpress.net, spotify.com...)" />
+            <button onclick="shortenUrl()">Rút gọn ngay</button>
+        </div>
+
+        <div id="resultBox" class="result-box">
+            <div style="flex: 1;">
+                <div style="color: var(--success); font-weight: bold; font-size: 0.9rem;" id="resMsg"></div>
+                <div style="margin: 10px 0; font-size: 1.05rem; display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
+                    <span>Link rút gọn:</span>
+                    <a id="resFullLink" href="#" target="_blank" style="font-size: 1.15rem;"></a>
+                    <button class="btn-sm btn-secondary" onclick="copyGeneratedLink()">📋 Copy Link</button>
+                </div>
+                <div style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 12px;">
+                    Khóa chính ID: <code id="resId" style="color: var(--warning);"></code> | 
+                    Mã Base 62: <code id="resCode" style="color: var(--accent);"></code> | 
+                    Thời gian xử lý: <strong id="resLatency" style="color: var(--success);"></strong>
+                </div>
+                <div style="display: flex; gap: 8px;">
+                    <a id="btnTest302" href="#" target="_blank" class="pill pill-302" style="padding: 6px 12px;" onclick="setTimeout(loadStats, 500)">Test Redirect 302 ↗</a>
+                    <a id="btnTest301" href="#" target="_blank" class="pill pill-301" style="padding: 6px 12px;" onclick="setTimeout(loadStats, 500)">Test Redirect 301 ↗</a>
+                </div>
+            </div>
+            <div class="qr-wrapper">
+                <div class="qr-box" id="qrcodeContainer" title="Quét bằng điện thoại để mở link"></div>
+                <span style="font-size: 0.75rem; color: var(--text-muted);">Quét QR bằng điện thoại</span>
+            </div>
+        </div>
+    </div>
+
+    <div class="grid-main">
+        <div class="card" style="margin-bottom: 0;">
+            <div class="card-header">
+                <h2 class="card-title">🗄️ Relational Database (Bảng <code>url</code>)</h2>
+                <span style="font-size: 0.8rem; color: var(--text-muted);">Click vào link hoặc nút QR để test</span>
+            </div>
+            <div class="table-wrap">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>ID (PK)</th>
+                            <th>Short URL</th>
+                            <th>Đường dẫn gốc (Long URL)</th>
+                            <th>Clicks</th>
+                            <th>Hành động</th>
+                        </tr>
+                    </thead>
+                    <tbody id="dbTableBody"></tbody>
+                </table>
+            </div>
+        </div>
+
+        <div style="display: flex; flex-direction: column; gap: 20px;">
+            <div class="card" style="margin-bottom: 0;">
+                <div class="card-header">
+                    <h2 class="card-title">⚡ Memory Cache (RAM)</h2>
+                    <button class="btn-sm btn-danger" onclick="clearCache()">Xóa Cache (Test Miss)</button>
+                </div>
+                <div class="table-wrap" style="max-height: 140px;">
+                    <table>
+                        <thead><tr><th>Key</th><th>Cached Destination URL</th></tr></thead>
+                        <tbody id="cacheTableBody"></tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div class="card" style="margin-bottom: 0;">
+                <div class="card-header">
+                    <h2 class="card-title">📟 Live System Trace Logs</h2>
+                    <button class="btn-sm btn-secondary" onclick="loadStats()">Làm mới</button>
+                </div>
+                <div class="log-console" id="logConsole"></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    let currentGeneratedUrl = '';
+
+    function fillSampleUrl() {
+        const samples = [
+            "https://en.wikipedia.org/wiki/Systems_design",
+            "https://vnexpress.net/khoa-hoc",
+            "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
+        ];
+        document.getElementById('longUrlInput').value = samples[Math.floor(Math.random() * samples.length)];
+    }
+
+    function highlightNodes(ids, isDanger = false, text = '') {
+        document.querySelectorAll('.arch-node').forEach(el => el.classList.remove('active', 'active-danger'));
+        if (text) document.getElementById('pipelineStatus').innerText = text;
+        ids.forEach(id => {
+            const el = document.getElementById(id);
+            if (el) el.classList.add(isDanger ? 'active-danger' : 'active');
+        });
+    }
+
+    function renderQrCode(url) {
+        const qrContainer = document.getElementById('qrcodeContainer');
+        qrContainer.innerHTML = '';
+        if (typeof QRCode !== 'undefined') {
+            new QRCode(qrContainer, {
+                text: url,
+                width: 115,
+                height: 115,
+                colorDark: "#000000",
+                colorLight: "#ffffff",
+                correctLevel: QRCode.CorrectLevel.H
+            });
+        } else {
+            qrContainer.innerHTML = `<img src="https://api.qrserver.com/v1/create-qr-code/?size=115x115&data=${encodeURIComponent(url)}" alt="QR Code" width="115" height="115" />`;
+        }
+    }
+
+    function showQrBanner(shortCode, id, latency, message) {
+        const cleanUrl = `${window.location.origin}/${shortCode}`;
+        currentGeneratedUrl = cleanUrl;
+
+        const box = document.getElementById('resultBox');
+        box.style.display = 'flex';
+        document.getElementById('resMsg').innerText = message;
+
+        const linkEl = document.getElementById('resFullLink');
+        linkEl.href = cleanUrl;
+        linkEl.innerText = cleanUrl;
+
+        document.getElementById('btnTest302').href = `${cleanUrl}?type=302`;
+        document.getElementById('btnTest301').href = `${cleanUrl}?type=301`;
+
+        document.getElementById('resId').innerText = id;
+        document.getElementById('resCode').innerText = '/' + shortCode;
+        document.getElementById('resLatency').innerText = latency + ' ms';
+
+        renderQrCode(cleanUrl);
+    }
+
+    async function shortenUrl(customUrl = null) {
+        const input = document.getElementById('longUrlInput');
+        const longUrl = customUrl || input.value.trim();
+        if (!longUrl) return alert('Vui lòng nhập đường dẫn!');
+
+        const res = await fetch('/api/v1/data/shorten', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ longUrl })
+        });
+        const result = await res.json();
+
+        if (res.status === 429) {
+            highlightNodes(['node-client', 'node-ratelimit'], true, 'CẢNH BÁO: Rate Limiter đã chặn yêu cầu spam (HTTP 429)!');
+            alert(result.error);
+            loadStats();
+            return;
+        }
+
+        if (!res.ok) {
+            alert(result.error || 'Có lỗi xảy ra!');
+            return;
+        }
+
+        highlightNodes(['node-client', 'node-ratelimit', 'node-base62', 'node-cache', 'node-db'], false, `Hoàn tất Write Flow trong ${result.latency}ms`);
+        showQrBanner(result.data.shortURL, result.data.id, result.latency, result.message);
+
+        if (!customUrl) input.value = '';
+        loadStats();
+    }
+
+    async function simulateSpamAttack() {
+        for (let i = 1; i <= 6; i++) {
+            await shortenUrl(`https://example.com/spam-test-${Date.now()}-${i}`);
+        }
+    }
+
+    function copyText(text) {
+        navigator.clipboard.writeText(text);
+        alert('Đã sao chép đường dẫn: ' + text);
+    }
+
+    function copyGeneratedLink() {
+        if (currentGeneratedUrl) copyText(currentGeneratedUrl);
+    }
+
+    async function loadStats() {
+        const res = await fetch('/api/v1/stats');
+        const data = await res.json();
+
+        document.getElementById('kpiUrls').innerText = data.metrics.totalUrls;
+        document.getElementById('kpiClicks').innerText = data.metrics.totalClicks;
+        document.getElementById('kpiCache').innerText = data.metrics.cacheSize;
+
+        const dbBody = document.getElementById('dbTableBody');
+        dbBody.innerHTML = data.database.map(row => {
+            const fullUrl = `${window.location.origin}/${row.shortURL}`;
+            return `
+            <tr>
+                <td style="color: var(--text-muted); font-family: monospace;">${row.id}</td>
+                <td><a href="/${row.shortURL}" target="_blank" onclick="setTimeout(loadStats, 500)">/${row.shortURL}</a></td>
+                <td style="max-width: 190px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${row.longURL}">${row.longURL}</td>
+                <td><strong>${row.clicks}</strong></td>
+                <td style="display: flex; gap: 5px;">
+                    <span class="pill pill-qr" onclick="showQrBanner('${row.shortURL}', '${row.id}', '0.5', 'Đang hiển thị mã QR cho /${row.shortURL}')">QR</span>
+                    <span class="pill pill-copy" onclick="copyText('${fullUrl}')">Copy</span>
+                    <a href="/${row.shortURL}?type=302" target="_blank" class="pill pill-302" onclick="setTimeout(loadStats, 500)">302</a>
+                    <a href="/${row.shortURL}?type=301" target="_blank" class="pill pill-301" onclick="setTimeout(loadStats, 500)">301</a>
+                </td>
+            </tr>
+        `}).join('');
+
+        const cacheBody = document.getElementById('cacheTableBody');
+        cacheBody.innerHTML = data.cache.length === 0 
+            ? `<tr><td colspan="2" style="color: var(--text-muted); text-align: center;">Cache trống (Sẽ kích hoạt Cache Miss)</td></tr>`
+            : data.cache.map(item => `<tr><td><strong style="color: var(--warning);">/${item.shortURL}</strong></td><td style="max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${item.longURL}</td></tr>`).join('');
+
+        const logConsole = document.getElementById('logConsole');
+        logConsole.innerHTML = data.logs.map(log => `
+            <div class="log-item">
+                <span style="color: #64748b;">[${log.time}]</span>
+                <span style="color: var(--accent); font-weight: bold;">[${log.step}]</span>
+                <span class="log-${log.status}">${log.detail}</span>
+            </div>
+        `).join('');
+    }
+
+    async function clearCache() {
+        highlightNodes(['node-cache'], true, 'Đã xóa sạch Cache! Lần truy cập tiếp theo sẽ truy vấn Database.');
+        await fetch('/api/v1/cache/clear', { method: 'POST' });
+        loadStats();
+    }
+
+    loadStats();
+    setInterval(loadStats, 3000);
+</script>
+</body>
+</html>
